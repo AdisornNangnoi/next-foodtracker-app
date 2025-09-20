@@ -2,15 +2,26 @@
 import { useState } from "react";
 import { ArrowLeft, Save } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
 
 export default function AddFoodPage() {
   const router = useRouter();
+
   // State for form fields
   const [foodName, setFoodName] = useState("");
   const [mealType, setMealType] = useState("อาหารเช้า");
   const [foodImage, setFoodImage] = useState<File | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [showSaveMessage, setShowSaveMessage] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // ไทย → อังกฤษ ให้ตรงกับ Dashboard ("Breakfast" | "Lunch" | "Dinner" | "Snack")
+  const mealMap: Record<string, "Breakfast" | "Lunch" | "Dinner" | "Snack"> = {
+    "อาหารเช้า": "Breakfast",
+    "อาหารกลางวัน": "Lunch",
+    "อาหารเย็น": "Dinner",
+    "ของว่าง": "Snack",
+  };
 
   // Handle image file selection and create a URL for preview
   const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -18,32 +29,94 @@ export default function AddFoodPage() {
     if (file) {
       setFoodImage(file);
       setPreviewImage(URL.createObjectURL(file));
+    } else {
+      setFoodImage(null);
+      setPreviewImage(null);
     }
   };
 
   // Handle form submission
-  const handleSubmit = (event: React.FormEvent) => {
+  const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    console.log("Saving food entry:", {
-      foodName,
-      mealType,
-      foodImage,
-    });
+    if (!foodName) {
+      alert("กรุณากรอกชื่ออาหาร");
+      return;
+    }
+    setSaving(true);
 
-    setShowSaveMessage(true);
-    setTimeout(() => {
-      setShowSaveMessage(false);
-      router.push('/dashboard');
-    }, 3000);
+    try {
+      // 1) หา user_id (จาก Supabase Auth หรือ localStorage)
+      let userId: string | null = null;
+      const { data: auth } = await supabase.auth.getUser();
+      if (auth?.user?.id) userId = auth.user.id;
+      else userId = localStorage.getItem("user_id");
+
+      if (!userId) {
+        alert("ยังไม่พบผู้ใช้ กรุณาเข้าสู่ระบบอีกครั้ง");
+        setSaving(false);
+        return;
+      }
+
+      // 2) อัปโหลดรูปไป bucket food_bk (ถ้ามี)
+      let imagePath: string | null = null;
+      if (foodImage) {
+        const safeName = foodImage.name.replace(/\s+/g, "_");
+        const filePath = `foods/${userId}/${Date.now()}_${safeName}`;
+
+        const { error: uploadErr } = await supabase.storage
+          .from("food_bk")
+          .upload(filePath, foodImage, {
+            upsert: true,
+            contentType: foodImage.type,
+            cacheControl: "3600",
+          });
+
+        if (uploadErr) {
+          console.warn("upload error:", uploadErr.message);
+          alert("อัปโหลดรูปไม่สำเร็จ: " + uploadErr.message);
+          setSaving(false);
+          return;
+        }
+        imagePath = filePath; // เก็บ path
+      }
+
+      // 3) บันทึกลง table food_tb
+      const today = new Date().toISOString().slice(0, 10); // yyyy-mm-dd
+      const { error: insertErr } = await supabase.from("food_tb").insert({
+        foodname: foodName,
+        meal: mealMap[mealType] ?? "Breakfast",
+        fooddate_at: today,
+        food_image_url: imagePath,
+        user_id: userId,
+      });
+
+      if (insertErr) {
+        console.error("insert error:", insertErr.message);
+        alert("บันทึกไม่สำเร็จ: " + insertErr.message);
+        setSaving(false);
+        return;
+      }
+
+      // 4) แสดงข้อความและกลับหน้า Dashboard
+      setShowSaveMessage(true);
+      setTimeout(() => {
+        setShowSaveMessage(false);
+        router.push("/dashboard");
+      }, 1000);
+    } catch (e: any) {
+      alert("เกิดข้อผิดพลาด: " + (e?.message || String(e)));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-cyan-400 via-sky-500 to-blue-600 p-4 font-sans text-white">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-gray-900 via-gray-850 to-gray-800 p-4 font-sans text-gray-100">
       {/* Navigation and header */}
       <div className="absolute left-4 top-4">
         <a
           href="/dashboard"
-          className="flex items-center gap-2 text-white transition-colors hover:text-gray-200 font-semibold"
+          className="flex items-center gap-2 text-gray-300 hover:text-gray-100 transition-colors font-semibold"
           aria-label="Back to dashboard"
         >
           <ArrowLeft size={20} />
@@ -52,8 +125,8 @@ export default function AddFoodPage() {
       </div>
 
       {/* Main content card with form */}
-      <div className="flex w-full max-w-lg flex-col items-center rounded-2xl bg-white/30 p-8 shadow-xl backdrop-blur-md">
-        <h1 className="mb-6 text-3xl font-extrabold tracking-tight text-white drop-shadow-lg sm:text-4xl">
+      <div className="flex w-full max-w-lg flex-col items-center rounded-2xl bg-gray-800/60 p-8 shadow-2xl backdrop-blur-md border border-gray-700">
+        <h1 className="mb-6 text-3xl font-extrabold tracking-tight text-gray-100 sm:text-4xl">
           Add Food list
         </h1>
 
@@ -66,7 +139,8 @@ export default function AddFoodPage() {
               value={foodName}
               onChange={(e) => setFoodName(e.target.value)}
               placeholder="ชื่ออาหาร"
-              className="w-full rounded-full border-0 bg-white/50 px-6 py-4 font-medium text-gray-900 placeholder-gray-600 transition duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full rounded-full border border-gray-600 bg-gray-700/70 px-6 py-4 font-medium text-gray-100 placeholder-gray-400 transition duration-300 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              required
             />
           </div>
 
@@ -76,12 +150,12 @@ export default function AddFoodPage() {
               id="mealType"
               value={mealType}
               onChange={(e) => setMealType(e.target.value)}
-              className="w-full rounded-full border-0 bg-white/50 px-6 py-4 font-medium text-gray-900 transition duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full rounded-full border border-gray-600 bg-gray-700/70 px-6 py-4 font-medium text-gray-100 transition duration-300 focus:outline-none focus:ring-2 focus:ring-indigo-400"
             >
-              <option value="อาหารเช้า">อาหารเช้า</option>
-              <option value="อาหารกลางวัน">อาหารกลางวัน</option>
-              <option value="อาหารเย็น">อาหารเย็น</option>
-              <option value="ของว่าง">ของว่าง</option>
+              <option value="อาหารเช้า" className="bg-gray-800 text-gray-100">อาหารเช้า</option>
+              <option value="อาหารกลางวัน" className="bg-gray-800 text-gray-100">อาหารกลางวัน</option>
+              <option value="อาหารเย็น" className="bg-gray-800 text-gray-100">อาหารเย็น</option>
+              <option value="ของว่าง" className="bg-gray-800 text-gray-100">ของว่าง</option>
             </select>
           </div>
 
@@ -92,11 +166,11 @@ export default function AddFoodPage() {
                 <img
                   src={previewImage}
                   alt="Food Preview"
-                  className="h-40 w-40 rounded-2xl border-4 border-white object-cover shadow-lg"
+                  className="h-40 w-40 rounded-2xl border-4 border-gray-300 object-cover shadow-lg"
                 />
               ) : (
-                <div className="flex h-40 w-40 items-center justify-center rounded-2xl border-4 border-dashed border-white/50 bg-white/20 text-white shadow-lg">
-                  <span className="text-sm font-semibold text-gray-600 text-center">
+                <div className="flex h-40 w-40 items-center justify-center rounded-2xl border-4 border-dashed border-gray-500/70 bg-gray-700/40 text-gray-200 shadow-lg">
+                  <span className="text-sm font-semibold text-gray-300 text-center">
                     เลือกรูปภาพ
                   </span>
                 </div>
@@ -114,17 +188,18 @@ export default function AddFoodPage() {
           {/* Save Button */}
           <button
             type="submit"
-            className="w-full transform rounded-full bg-white px-8 py-4 font-semibold text-blue-600 shadow-md transition duration-300 ease-in-out hover:scale-105 hover:bg-gray-200 flex items-center justify-center gap-2"
+            disabled={saving}
+            className="w-full transform rounded-full bg-indigo-500 px-8 py-4 font-semibold text-gray-100 shadow-md transition duration-300 ease-in-out hover:scale-105 hover:bg-indigo-600 flex items-center justify-center gap-2 disabled:opacity-60"
           >
             <Save size={20} />
-            บันทึก
+            {saving ? "กำลังบันทึก..." : "บันทึก"}
           </button>
         </form>
 
         {/* Success message modal */}
         {showSaveMessage && (
-          <div className="fixed inset-0 flex items-center justify-center bg-blue-900 bg-opacity-70">
-            <div className="rounded-lg bg-blue-500 px-8 py-6 text-white text-center shadow-lg">
+          <div className="fixed inset-0 flex items-center justify-center bg-gray-900/70">
+            <div className="rounded-lg bg-indigo-600 px-8 py-6 text-white text-center shadow-lg">
               <p className="font-bold">บันทึกสำเร็จ!</p>
             </div>
           </div>
