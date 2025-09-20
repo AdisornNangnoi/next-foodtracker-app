@@ -1,5 +1,6 @@
 "use client";
 import React, { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
@@ -33,7 +34,7 @@ export default function RegisterPage() {
 
     try {
       if (imageFile) {
-        const ext = imageFile.type.split("/")[1] || "png";
+  // const ext = imageFile.type.split("/")[1] || "png"; // unused
         const filePath = `users/${Date.now()}_${imageFile.name.replace(/\s+/g, "_")}`;
 
         const { error: uploadErr } = await supabase.storage
@@ -49,8 +50,9 @@ export default function RegisterPage() {
         const { data: urlData } = supabase.storage.from("user_bk").getPublicUrl(filePath);
         imageUrl = urlData.publicUrl;
       }
-    } catch (err: any) {
-      console.warn("Upload image error:", err?.message || err);
+    } catch (err) {
+      const error = err as Error;
+      console.warn("Upload image error:", error?.message || error);
     }
 
     // insert ลงตาราง user_tb
@@ -164,10 +166,13 @@ export default function RegisterPage() {
 
             {imagePreview ? (
               <div className="relative">
-                <img
+                <Image
                   src={imagePreview}
                   alt="Profile Preview"
+                  width={112}
+                  height={112}
                   className="h-28 w-28 rounded-full border-4 border-gray-300 object-cover shadow-lg"
+                  unoptimized
                 />
                 <button
                   type="button"

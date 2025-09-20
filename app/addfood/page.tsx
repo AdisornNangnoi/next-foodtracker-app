@@ -103,8 +103,12 @@ export default function AddFoodPage() {
         setShowSaveMessage(false);
         router.push("/dashboard");
       }, 1000);
-    } catch (e: any) {
-      alert("เกิดข้อผิดพลาด: " + (e?.message || String(e)));
+    } catch (e: unknown) {
+      if (e && typeof e === "object" && "message" in e) {
+        alert("เกิดข้อผิดพลาด: " + (e as { message: string }).message);
+      } else {
+        alert("เกิดข้อผิดพลาด: " + String(e));
+      }
     } finally {
       setSaving(false);
     }

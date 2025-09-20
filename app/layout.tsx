@@ -30,11 +30,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${prompt.className} flex flex-col min-h-screen bg-gradient-to-br from-cyan-400 via-sky-500 to-blue-600`}>
-        <main className="flex-grow">
-          {children}
-        </main>
-        <footer className="sticky bottom-0 text-center py-[10px] text-xl md:text-2xl text-white opacity-90 bg-gradient-to-t from-black/60 to-transparent">
+      <body
+        className={`${prompt.className} flex flex-col min-h-screen bg-gradient-to-br from-gray-900 via-gray-850 to-gray-800 text-gray-100`}
+      >
+        <main className="flex-grow">{children}</main>
+        <footer className="sticky bottom-0 text-center py-[10px] text-base md:text-lg text-gray-300 bg-gradient-to-t from-gray-900/70 to-transparent border-t border-gray-700">
           Created by Adisorn Nangnoi
           <br />
           Copyright &copy; 2025 Southeast Asia University

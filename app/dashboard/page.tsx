@@ -109,8 +109,15 @@ export default function Page() {
 
         if (error) throw error;
 
+        type RowType = {
+          id: string;
+          foodname: string;
+          meal: string;
+          fooddate_at: string;
+          food_image_url: string | null;
+        };
         const mapped: FoodLog[] =
-          rows?.map((r: any) => {
+          (rows as RowType[] | null)?.map((r) => {
             const rawUrl: string | null = r.food_image_url ?? null;
             let imageUrl = "";
             if (isExternalUrl(rawUrl)) {
@@ -137,8 +144,9 @@ export default function Page() {
 
         const newTotalPages = Math.max(1, Math.ceil((count ?? 0) / pageSize));
         if (page > newTotalPages) setPage(newTotalPages);
-      } catch (e: any) {
-        console.error("fetch foods error:", e?.message || e);
+      } catch (e) {
+        const err = e as Error;
+        console.error("fetch foods error:", err?.message || err);
       } finally {
         setLoading(false);
       }
@@ -171,12 +179,13 @@ export default function Page() {
   // avatar node — บังคับขนาดคงที่
   const avatarNode =
     isExternalUrl(userAvatar) && userAvatar ? (
-      <img
+      <Image
         src={userAvatar}
         alt="User profile picture"
         width={40}
         height={40}
         className="rounded-full object-cover w-10 h-10 ring-1 ring-gray-600"
+        unoptimized
       />
     ) : (
       <Image
@@ -277,10 +286,13 @@ export default function Page() {
                       <div className="flex items-center gap-3">
                         {/* บังคับขนาดรูปอาหารให้เท่ากันทั้งหมด */}
                         {food.imageUrl ? (
-                          <img
+                          <Image
                             src={food.imageUrl}
                             alt={food.name}
+                            width={40}
+                            height={40}
                             className="w-10 h-10 rounded-md object-cover ring-1 ring-gray-600"
+                            unoptimized
                           />
                         ) : (
                           <div className="w-10 h-10 bg-gray-700 rounded-md" />
