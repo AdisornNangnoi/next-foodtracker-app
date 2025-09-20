@@ -185,7 +185,7 @@ export default function Page() {
         width={40}
         height={40}
         className="rounded-full object-cover w-10 h-10 ring-1 ring-gray-600"
-        unoptimized
+        unoptimized 
       />
     ) : (
       <Image
