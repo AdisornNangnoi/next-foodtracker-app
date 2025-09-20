@@ -33,8 +33,12 @@ export default function RootLayout({
       <body
         className={`${prompt.className} flex flex-col min-h-screen bg-gradient-to-br from-gray-900 via-gray-850 to-gray-800 text-gray-100`}
       >
-        <main className="flex-grow">{children}</main>
-        <footer className="sticky bottom-0 text-center py-[10px] text-base md:text-lg text-gray-300 bg-gradient-to-t from-gray-900/70 to-transparent border-t border-gray-700">
+        <main className="flex-grow pb-24 md:pb-28">{children}</main>
+        <footer
+          className="sticky bottom-0 h-16 md:h-20 flex flex-col justify-center text-center
+                    text-base md:text-lg text-gray-300 bg-gradient-to-t from-gray-900/70 to-transparent
+                    border-t border-gray-700"
+        >
           Created by Adisorn Nangnoi
           <br />
           Copyright &copy; 2025 Southeast Asia University
