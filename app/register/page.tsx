@@ -6,15 +6,10 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 
-/**
- * A functional component for the registration page of the Food Tracker application.
- *
- * @returns {JSX.Element} The Register page component.
- */
 export default function RegisterPage() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [password, setPassword] = useState(""); 
   const [gender, setGender] = useState("");
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -30,16 +25,18 @@ export default function RegisterPage() {
       return;
     }
 
+
     let imageUrl: string | null = null;
 
     try {
       if (imageFile) {
-  // const ext = imageFile.type.split("/")[1] || "png"; // unused
-        const filePath = `users/${Date.now()}_${imageFile.name.replace(/\s+/g, "_")}`;
+        const safeName = imageFile.name.replace(/\s+/g, "_");
+        const unique = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const objectName = `${unique}_${safeName}`; 
 
         const { error: uploadErr } = await supabase.storage
-          .from("user_bk") // ✅ ต้องมี bucket นี้
-          .upload(filePath, imageFile, {
+          .from("user_bk")
+          .upload(objectName, imageFile, {
             upsert: true,
             contentType: imageFile.type,
             cacheControl: "3600",
@@ -47,8 +44,9 @@ export default function RegisterPage() {
 
         if (uploadErr) throw uploadErr;
 
-        const { data: urlData } = supabase.storage.from("user_bk").getPublicUrl(filePath);
-        imageUrl = urlData.publicUrl;
+     
+        const { data: pub } = supabase.storage.from("user_bk").getPublicUrl(objectName);
+        imageUrl = pub.publicUrl ?? null;
       }
     } catch (err) {
       const error = err as Error;
@@ -59,7 +57,7 @@ export default function RegisterPage() {
     const { error } = await supabase.from("user_tb").insert({
       fullname: fullName,
       email,
-      password, // ⚠️ เก็บ plain text ตาม schema ปัจจุบัน
+      password, 
       gender,
       user_image_url: imageUrl,
     });
@@ -110,7 +108,7 @@ export default function RegisterPage() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-700 p-4 font-sans text-center text-gray-100">
       <div className="flex w-full max-w-lg flex-col items-center justify-center rounded-2xl bg-gray-800/60 p-8 shadow-2xl backdrop-blur-md">
-        {/* Back to Home Button */}
+        {/* Back to Home */}
         <Link
           href="/"
           className="absolute left-4 top-4 text-gray-300 transition-colors hover:text-gray-100"
@@ -180,15 +178,10 @@ export default function RegisterPage() {
                   className="absolute right-0 top-0 rounded-full bg-rose-500 p-1 text-white hover:bg-rose-600 focus:outline-none"
                   aria-label="Cancel image"
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    strokeWidth={2}
-                    stroke="currentColor"
-                    className="h-4 w-4"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                       strokeWidth={2} stroke="currentColor" className="h-4 w-4">
+                    <path strokeLinecap="round" strokeLinejoin="round"
+                          d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>

@@ -7,7 +7,6 @@ import { supabase } from "@/lib/supabaseClient";
 export default function AddFoodPage() {
   const router = useRouter();
 
-  // State for form fields
   const [foodName, setFoodName] = useState("");
   const [mealType, setMealType] = useState("อาหารเช้า");
   const [foodImage, setFoodImage] = useState<File | null>(null);
@@ -15,7 +14,6 @@ export default function AddFoodPage() {
   const [showSaveMessage, setShowSaveMessage] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // ไทย → อังกฤษ ให้ตรงกับ Dashboard ("Breakfast" | "Lunch" | "Dinner" | "Snack")
   const mealMap: Record<string, "Breakfast" | "Lunch" | "Dinner" | "Snack"> = {
     "อาหารเช้า": "Breakfast",
     "อาหารกลางวัน": "Lunch",
@@ -23,7 +21,6 @@ export default function AddFoodPage() {
     "ของว่าง": "Snack",
   };
 
-  // Handle image file selection and create a URL for preview
   const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -35,7 +32,6 @@ export default function AddFoodPage() {
     }
   };
 
-  // Handle form submission
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!foodName) {
@@ -45,7 +41,7 @@ export default function AddFoodPage() {
     setSaving(true);
 
     try {
-      // 1) หา user_id (จาก Supabase Auth หรือ localStorage)
+      // 1) หา user_id
       let userId: string | null = null;
       const { data: auth } = await supabase.auth.getUser();
       if (auth?.user?.id) userId = auth.user.id;
@@ -57,15 +53,16 @@ export default function AddFoodPage() {
         return;
       }
 
-      // 2) อัปโหลดรูปไป bucket food_bk (ถ้ามี)
-      let imagePath: string | null = null;
+      // 2) อัปโหลดรูป
+      let imageUrl: string | null = null;
       if (foodImage) {
         const safeName = foodImage.name.replace(/\s+/g, "_");
-        const filePath = `foods/${userId}/${Date.now()}_${safeName}`;
+        const unique = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const objectName = `${unique}_${safeName}`;
 
         const { error: uploadErr } = await supabase.storage
           .from("food_bk")
-          .upload(filePath, foodImage, {
+          .upload(objectName, foodImage, {
             upsert: true,
             contentType: foodImage.type,
             cacheControl: "3600",
@@ -77,16 +74,18 @@ export default function AddFoodPage() {
           setSaving(false);
           return;
         }
-        imagePath = filePath; // เก็บ path
+
+        const { data: pub } = supabase.storage.from("food_bk").getPublicUrl(objectName);
+        imageUrl = pub.publicUrl || null; 
       }
 
-      // 3) บันทึกลง table food_tb
-      const today = new Date().toISOString().slice(0, 10); // yyyy-mm-dd
+      // 3) บันทึกข้อมูล
+      const today = new Date().toISOString().slice(0, 10);
       const { error: insertErr } = await supabase.from("food_tb").insert({
         foodname: foodName,
         meal: mealMap[mealType] ?? "Breakfast",
         fooddate_at: today,
-        food_image_url: imagePath,
+        food_image_url: imageUrl, 
         user_id: userId,
       });
 
@@ -97,7 +96,7 @@ export default function AddFoodPage() {
         return;
       }
 
-      // 4) แสดงข้อความและกลับหน้า Dashboard
+      // 4) แจ้งและกลับ Dashboard
       setShowSaveMessage(true);
       setTimeout(() => {
         setShowSaveMessage(false);
@@ -128,14 +127,14 @@ export default function AddFoodPage() {
         </a>
       </div>
 
-      {/* Main content card with form */}
+      {/* Card */}
       <div className="flex w-full max-w-lg flex-col items-center rounded-2xl bg-gray-800/60 p-8 shadow-2xl backdrop-blur-md border border-gray-700">
         <h1 className="mb-6 text-3xl font-extrabold tracking-tight text-gray-100 sm:text-4xl">
           Add Food list
         </h1>
 
         <form onSubmit={handleSubmit} className="w-full space-y-6">
-          {/* Food Name Input */}
+          {/* Food Name */}
           <div className="relative">
             <input
               type="text"
@@ -148,7 +147,7 @@ export default function AddFoodPage() {
             />
           </div>
 
-          {/* Meal Type Dropdown */}
+          {/* Meal */}
           <div className="relative">
             <select
               id="mealType"
@@ -189,7 +188,7 @@ export default function AddFoodPage() {
             </label>
           </div>
 
-          {/* Save Button */}
+          {/* Save */}
           <button
             type="submit"
             disabled={saving}
@@ -200,7 +199,7 @@ export default function AddFoodPage() {
           </button>
         </form>
 
-        {/* Success message modal */}
+        {/* Success modal */}
         {showSaveMessage && (
           <div className="fixed inset-0 flex items-center justify-center bg-gray-900/70">
             <div className="rounded-lg bg-indigo-600 px-8 py-6 text-white text-center shadow-lg">

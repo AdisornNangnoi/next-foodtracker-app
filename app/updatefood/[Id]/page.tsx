@@ -1,102 +1,269 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowLeft, Save } from "lucide-react";
+import { useRouter, useParams } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
 
-export default function EditFoodPage() {
-  const [foodName, setFoodName] = useState("ข้าวผัด"); // mock ค่าเดิม
-  const [mealType, setMealType] = useState("อาหารกลางวัน");
+export default function UpdateFoodPage() {
+  const router = useRouter();
+  const params = useParams();
+  const foodId = params.id as string;
+
+  // ฟิลด์ฟอร์ม
+  const [foodName, setFoodName] = useState("");
+  const [mealType, setMealType] = useState<
+    "อาหารเช้า" | "อาหารกลางวัน" | "อาหารเย็น" | "ของว่าง"
+  >("อาหารเช้า");
   const [foodImage, setFoodImage] = useState<File | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
-  const [showSaveMessage, setShowSaveMessage] = useState(false);
 
+  // เก็บ URL เดิมของรูป
+  const [oldImageUrl, setOldImageUrl] = useState<string | null>(null);
+
+  const [showSaveMessage, setShowSaveMessage] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Map ไทย <-> อังกฤษ
+  const mealMapThaiToEng: Record<
+    string,
+    "Breakfast" | "Lunch" | "Dinner" | "Snack"
+  > = {
+    อาหารเช้า: "Breakfast",
+    อาหารกลางวัน: "Lunch",
+    อาหารเย็น: "Dinner",
+    ของว่าง: "Snack",
+  };
+  const mealMapEngToThai: Record<string, typeof mealType> = {
+    Breakfast: "อาหารเช้า",
+    Lunch: "อาหารกลางวัน",
+    Dinner: "อาหารเย็น",
+    Snack: "ของว่าง",
+  };
+
+  // โหลดข้อมูลเดิมจาก DB
+  useEffect(() => {
+    if (!foodId) return;
+    (async () => {
+      const { data, error } = await supabase
+        .from("food_tb")
+        .select("foodname, meal, food_image_url")
+        .eq("id", foodId)
+        .single();
+
+      if (error) {
+        alert("ดึงข้อมูลไม่สำเร็จ: " + error.message);
+        return;
+      }
+      if (!data) return;
+
+      setFoodName(data.foodname ?? "");
+      setMealType(mealMapEngToThai[data.meal] ?? "อาหารเช้า");
+
+      const url = (data.food_image_url as string) || null;
+      setOldImageUrl(url);
+      setPreviewImage(url);
+    })();
+  }, [foodId]);
+
+  // เปลี่ยนรูปใหม่
   const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      setFoodImage(file);
-      setPreviewImage(URL.createObjectURL(file));
+    const file = event.target.files?.[0] ?? null;
+    setFoodImage(file);
+    if (file) setPreviewImage(URL.createObjectURL(file));
+  };
+
+  const urlToStoragePath = (publicUrl: string | null): string | null => {
+    if (!publicUrl) return null;
+    try {
+      const u = new URL(publicUrl);
+      const marker = `/object/public/food_bk/`; // ชื่อบักเก็ต
+      const idx = u.pathname.indexOf(marker);
+      if (idx === -1) return null;
+      return decodeURIComponent(u.pathname.slice(idx + marker.length));
+    } catch {
+      return null;
     }
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  // บันทึกการอัปเดต
+  const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    console.log("Editing food entry:", {
-      foodName,
-      mealType,
-      foodImage,
-    });
+    if (!foodName) {
+      alert("กรุณากรอกชื่ออาหาร");
+      return;
+    }
 
-    setShowSaveMessage(true);
-    setTimeout(() => setShowSaveMessage(false), 3000);
+    setSaving(true);
+    try {
+      let finalImageUrl: string | null = oldImageUrl ?? null;
+
+      if (foodImage) {
+        const safeName = foodImage.name.replace(/\s+/g, "_");
+        const unique = `${Date.now()}_${Math.random()
+          .toString(36)
+          .slice(2, 8)}`;
+        const objectName = `${unique}_${safeName}`;
+
+        const { error: uploadErr } = await supabase.storage
+          .from("food_bk")
+          .upload(objectName, foodImage, {
+            upsert: true,
+            contentType: foodImage.type,
+            cacheControl: "3600",
+          });
+
+        if (uploadErr) {
+          alert("อัปโหลดรูปไม่สำเร็จ: " + uploadErr.message);
+          setSaving(false);
+          return;
+        }
+
+        const { data: pub } = supabase.storage
+          .from("food_bk")
+          .getPublicUrl(objectName);
+        finalImageUrl = pub.publicUrl || null;
+
+        const oldPath = urlToStoragePath(oldImageUrl);
+        if (oldPath) {
+          const { error: rmErr } = await supabase.storage
+            .from("food_bk")
+            .remove([oldPath]);
+          if (rmErr) console.warn("ลบไฟล์เก่าไม่สำเร็จ:", rmErr.message);
+        }
+      }
+
+      // อัปเดตข้อมูลในตาราง food_tb
+      const { error: updateErr } = await supabase
+        .from("food_tb")
+        .update({
+          foodname: foodName,
+          meal: mealMapThaiToEng[mealType] ?? "Breakfast",
+          food_image_url: finalImageUrl,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", foodId);
+
+      if (updateErr) {
+        alert("บันทึกไม่สำเร็จ: " + updateErr.message);
+        setSaving(false);
+        return;
+      }
+
+      setShowSaveMessage(true);
+      setTimeout(() => {
+        setShowSaveMessage(false);
+        router.push("/dashboard");
+      }, 1000);
+    } catch (e: unknown) {
+      alert("เกิดข้อผิดพลาด: " + String(e));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-red-400 via-green-500 to-blue-600 p-4 font-sans text-white">
-      {/* Header */}
-      <div className="flex w-full max-w-lg items-center justify-between mb-6">
-        <a href="/dashboard" className="flex items-center gap-2 text-gray-700 hover:text-white transition-colors font-semibold">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-gray-900 via-gray-850 to-gray-800 p-4 font-sans text-gray-100">
+      {/* Back link */}
+      <div className="absolute left-4 top-4">
+        <a
+          href="/dashboard"
+          className="flex items-center gap-2 text-gray-300 hover:text-gray-100 transition-colors font-semibold"
+          aria-label="Back to dashboard"
+        >
           <ArrowLeft size={20} />
           Back to dashboard
         </a>
       </div>
 
-      {/* Edit form card */}
-      <div className="flex w-full max-w-lg flex-col items-center rounded-2xl bg-white/30 p-8 shadow-xl backdrop-blur-md">
-        <h1 className="mb-6 text-3xl font-extrabold tracking-tight text-gray-800 sm:text-4xl">
-          Edit Food detail
+      {/* Card */}
+      <div className="flex w-full max-w-lg flex-col items-center rounded-2xl bg-gray-800/60 p-8 shadow-2xl backdrop-blur-md border border-gray-700">
+        <h1 className="mb-6 text-3xl font-extrabold tracking-tight text-gray-100 sm:text-4xl">
+          Update Food
         </h1>
 
         <form onSubmit={handleSubmit} className="w-full space-y-6">
-          {/* Food Name */}
-          <input
-            type="text"
-            value={foodName}
-            onChange={(e) => setFoodName(e.target.value)}
-            placeholder="ชื่ออาหาร"
-            className="w-full rounded-full border-0 bg-white/50 px-6 py-4 font-medium text-gray-800 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-sky-500"
-          />
+          {/* Food name */}
+          <div className="relative">
+            <input
+              type="text"
+              id="foodName"
+              value={foodName}
+              onChange={(e) => setFoodName(e.target.value)}
+              placeholder="ชื่ออาหาร"
+              className="w-full rounded-full border border-gray-600 bg-gray-700/70 px-6 py-4 font-medium text-gray-100 placeholder-gray-400 transition duration-300 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              required
+            />
+          </div>
 
-          {/* Meal Type */}
-          <select
-            value={mealType}
-            onChange={(e) => setMealType(e.target.value)}
-            className="w-full rounded-full border-0 bg-white/50 px-6 py-4 font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-          >
-            <option value="อาหารเช้า">อาหารเช้า</option>
-            <option value="อาหารกลางวัน">อาหารกลางวัน</option>
-            <option value="อาหารเย็น">อาหารเย็น</option>
-            <option value="ของว่าง">ของว่าง</option>
-          </select>
+          {/* Meal */}
+          <div className="relative">
+            <select
+              id="mealType"
+              value={mealType}
+              onChange={(e) => setMealType(e.target.value as typeof mealType)}
+              className="w-full rounded-full border border-gray-600 bg-gray-700/70 px-6 py-4 font-medium text-gray-100 transition duration-300 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            >
+              <option value="อาหารเช้า" className="bg-gray-800 text-gray-100">
+                อาหารเช้า
+              </option>
+              <option
+                value="อาหารกลางวัน"
+                className="bg-gray-800 text-gray-100"
+              >
+                อาหารกลางวัน
+              </option>
+              <option value="อาหารเย็น" className="bg-gray-800 text-gray-100">
+                อาหารเย็น
+              </option>
+              <option value="ของว่าง" className="bg-gray-800 text-gray-100">
+                ของว่าง
+              </option>
+            </select>
+          </div>
 
-          {/* Food Image */}
+          {/* Image */}
           <div className="flex flex-col items-center space-y-4">
             <label htmlFor="foodImage" className="cursor-pointer">
               {previewImage ? (
-                <img src={previewImage} alt="Food Preview" className="h-40 w-40 rounded-2xl border-4 border-white object-cover shadow-lg" />
+                <img
+                  src={previewImage}
+                  alt="Food Preview"
+                  className="h-40 w-40 rounded-2xl border-4 border-gray-300 object-cover shadow-lg"
+                />
               ) : (
-                <div className="flex h-40 w-40 items-center justify-center rounded-2xl border-4 border-dashed border-white/50 bg-white/20 text-white shadow-lg">
-                  <span className="text-sm font-semibold text-center">Select image</span>
+                <div className="flex h-40 w-40 items-center justify-center rounded-2xl border-4 border-dashed border-gray-500/70 bg-gray-700/40 text-gray-200 shadow-lg">
+                  <span className="text-sm font-semibold text-gray-300 text-center">
+                    เลือกรูปภาพ
+                  </span>
                 </div>
               )}
-              <input id="foodImage" type="file" className="hidden" accept="image/*" onChange={handleImageChange} />
+              <input
+                id="foodImage"
+                type="file"
+                className="hidden"
+                accept="image/*"
+                onChange={handleImageChange}
+              />
             </label>
           </div>
 
-          {/* Save Button */}
+          {/* Save */}
           <button
             type="submit"
-            className="w-full transform rounded-full bg-blue-600 px-8 py-4 font-semibold text-white shadow-md transition duration-300 ease-in-out hover:scale-105 hover:bg-green-500 flex items-center justify-center gap-2"
+            disabled={saving}
+            className="w-full transform rounded-full bg-indigo-500 px-8 py-4 font-semibold text-gray-100 shadow-md transition duration-300 ease-in-out hover:scale-105 hover:bg-indigo-600 flex items-center justify-center gap-2 disabled:opacity-60"
           >
             <Save size={20} />
-            Save Changes
+            {saving ? "กำลังบันทึก..." : "บันทึกการเปลี่ยนแปลง"}
           </button>
         </form>
 
-        {/* Success message */}
+        {/* Modal */}
         {showSaveMessage && (
-          <div className="fixed inset-0 flex items-center justify-center bg-gradient-to-br from-red-400 via-green-500 to-blue-600">
-            <div className="rounded-lg bg-green-500 px-8 py-6 text-white text-center shadow-lg">
-              <p className="font-bold">Save changes success!</p>
+          <div className="fixed inset-0 flex items-center justify-center bg-gray-900/70">
+            <div className="rounded-lg bg-indigo-600 px-8 py-6 text-white text-center shadow-lg">
+              <p className="font-bold">บันทึกสำเร็จ!</p>
             </div>
           </div>
         )}

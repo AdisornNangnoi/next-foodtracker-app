@@ -1,4 +1,4 @@
-// file: app/dashboard/page.tsx
+
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -20,7 +20,7 @@ import { useRouter } from "next/navigation";
 // --- Types ---
 interface FoodLog {
   id: string;
-  date: string; // yyyy-mm-dd
+  date: string; 
   imageUrl: string;
   name: string;
   meal: "Breakfast" | "Lunch" | "Dinner" | "Snack";
@@ -34,7 +34,7 @@ export default function Page() {
   const [userName, setUserName] = useState<string>("User");
   const [userAvatar, setUserAvatar] = useState<string | null>(null);
 
-  // ===== Foods (server-side pagination) =====
+  // ===== Foods  =====
   const [foods, setFoods] = useState<FoodLog[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -61,7 +61,7 @@ export default function Page() {
       }
       setUserId(uid);
 
-      // profile (ใช้ cache localStorage ก่อน)
+      // profile
       let name = localStorage.getItem("fullname");
       let avatar = localStorage.getItem("user_image_url");
       if ((!name || !avatar) && uid) {
@@ -82,7 +82,7 @@ export default function Page() {
     })();
   }, [router]);
 
-  // ===== Fetch foods when user/page/search/pageSize changes =====
+  // ===== Fetch foods =====
   useEffect(() => {
     if (!userId) return;
     (async () => {
@@ -165,18 +165,50 @@ export default function Page() {
   };
 
   // ===== Delete and refresh current page =====
-  const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this item?")) return;
+  const handleDelete = async (id: string, oldImageUrl: string | null) => {
+    if (!confirm("ต้องการลบหรือไม่?")) return;
+
+    // Optimistic UI
+    const prevFoods = foods;
+    const prevTotal = total;
+    const willBeEmptyAfterDelete = foods.length === 1;
+    const shouldGoPrevPage = willBeEmptyAfterDelete && page > 1;
+
+    setFoods((list) => list.filter((f) => f.id !== id));
+    setTotal((t) => Math.max(0, t - 1));
+    if (shouldGoPrevPage) setPage((p) => p - 1);
+
     const { error } = await supabase.from("food_tb").delete().eq("id", id);
     if (error) {
       alert("ลบไม่สำเร็จ: " + error.message);
+      // rollback
+      setFoods(prevFoods);
+      setTotal(prevTotal);
+      if (shouldGoPrevPage) setPage((p) => p + 1);
       return;
     }
-    if (foods.length === 1 && page > 1) setPage((p) => p - 1);
-    else setPage((p) => p);
+
+    // ลบไฟล์ในบักเก็ต
+    if (oldImageUrl) {
+      let path = oldImageUrl;
+      if (/^https?:\/\//i.test(oldImageUrl)) {
+        try {
+          const u = new URL(oldImageUrl);
+          const marker = `/object/public/food_bk/`;
+          const idx = u.pathname.indexOf(marker);
+          path = idx !== -1 ? decodeURIComponent(u.pathname.slice(idx + marker.length)) : "";
+        } catch {
+          path = "";
+        }
+      }
+      if (path) {
+        const { error: rmErr } = await supabase.storage.from("food_bk").remove([path]);
+        if (rmErr) console.warn("remove file error:", rmErr.message);
+      }
+    }
   };
 
-  // avatar node — บังคับขนาดคงที่
+  // avatar
   const avatarNode =
     isExternalUrl(userAvatar) && userAvatar ? (
       <Image
@@ -185,7 +217,7 @@ export default function Page() {
         width={40}
         height={40}
         className="rounded-full object-cover w-10 h-10 ring-1 ring-gray-600"
-        unoptimized 
+        unoptimized
       />
     ) : (
       <Image
@@ -218,7 +250,16 @@ export default function Page() {
           <span className="hidden sm:inline font-semibold text-gray-300">
             {userName}
           </span>
-          {avatarNode}
+
+          {/* ไปหน้า profile */}
+          <Link
+            href="/profile"
+            aria-label="Go to profile"
+            className="rounded-full ring-1 ring-transparent hover:ring-indigo-400 transition-shadow"
+            title="เปิดหน้าโปรไฟล์"
+          >
+            {avatarNode}
+          </Link>
         </div>
       </div>
 
@@ -284,7 +325,7 @@ export default function Page() {
                     <td className="p-3 text-gray-200">{food.date}</td>
                     <td className="p-3">
                       <div className="flex items-center gap-3">
-                        {/* บังคับขนาดรูปอาหารให้เท่ากันทั้งหมด */}
+                        {/* รูปอาหาร */}
                         {food.imageUrl ? (
                           <Image
                             src={food.imageUrl}
@@ -312,7 +353,7 @@ export default function Page() {
                           <Edit size={18} />
                         </Link>
                         <button
-                          onClick={() => handleDelete(food.id)}
+                          onClick={() => handleDelete(food.id, food.imageUrl)}
                           className="p-2 text-gray-300 hover:text-rose-400"
                         >
                           <Trash2 size={18} />
@@ -326,7 +367,7 @@ export default function Page() {
           </table>
         </div>
 
-        {/* Pagination + PageSize (ย้ายลงมาล่าง) */}
+        {/* Pagination + PageSize */}
         <div className="flex flex-col sm:flex-row justify-between items-center gap-3 mt-6">
           <div className="text-sm text-gray-300">
             Showing{" "}
@@ -341,7 +382,6 @@ export default function Page() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Page size moved here */}
             <select
               value={pageSize}
               onChange={(e) => {

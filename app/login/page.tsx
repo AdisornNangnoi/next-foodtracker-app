@@ -5,6 +5,8 @@ import { ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
+const isExternalUrl = (u?: string | null) => !!u && /^https?:\/\//i.test(u);
+
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -16,11 +18,13 @@ export default function LoginPage() {
       alert("กรุณากรอกอีเมลและรหัสผ่าน");
       return;
     }
+
+    // ล็อกอินจากตาราง user_tb
     const { data, error } = await supabase
       .from("user_tb")
-      .select("*")
+      .select("id, fullname, email, user_image_url")
       .eq("email", email)
-      .eq("password", password)
+      .eq("password", password) 
       .single();
 
     if (error || !data) {
@@ -28,9 +32,41 @@ export default function LoginPage() {
       return;
     }
 
+  
+    let finalAvatarUrl: string | null = null;
+
+    if (data.user_image_url) {
+      if (isExternalUrl(data.user_image_url)) {
+        
+        finalAvatarUrl = data.user_image_url;
+      } else {
+        
+        const { data: pub } = supabase
+          .storage
+          .from("user_bk")
+          .getPublicUrl(data.user_image_url);
+
+        finalAvatarUrl = pub.publicUrl || null;
+
+        
+        if (finalAvatarUrl) {
+          await supabase
+            .from("user_tb")
+            .update({ user_image_url: finalAvatarUrl })
+            .eq("id", data.id);
+        }
+      }
+    }
+
+    // เก็บลง localStorage
     localStorage.setItem("user_id", data.id);
     localStorage.setItem("fullname", data.fullname ?? "");
-    localStorage.setItem("user_image_url", data.user_image_url ?? "");
+    if (finalAvatarUrl) {
+      localStorage.setItem("user_image_url", finalAvatarUrl);
+    } else {
+      localStorage.removeItem("user_image_url");
+    }
+
     router.push("/dashboard");
   };
 
@@ -56,6 +92,7 @@ export default function LoginPage() {
             placeholder="อีเมล"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            required
             className="w-full rounded-md border border-gray-600 bg-gray-700/70 px-4 py-3 font-medium text-gray-100 placeholder-gray-400 transition duration-300 focus:outline-none focus:ring-2 focus:ring-indigo-400"
           />
           <input
@@ -63,6 +100,7 @@ export default function LoginPage() {
             placeholder="รหัสผ่าน"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            required
             className="w-full rounded-md border border-gray-600 bg-gray-700/70 px-4 py-3 font-medium text-gray-100 placeholder-gray-400 transition duration-300 focus:outline-none focus:ring-2 focus:ring-indigo-400"
           />
           <button
